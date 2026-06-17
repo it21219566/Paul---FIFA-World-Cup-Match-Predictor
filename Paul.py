@@ -252,6 +252,17 @@ def generate_score_matrix(lambda_a, lambda_b, max_goals=10):
 # ==========================================
 app = FastAPI(title="World Cup Predictor API")
 
+# --- UI STARTUP LINK ---
+# Gets the absolute path of index.html relative to this Python script
+current_dir = os.path.dirname(os.path.abspath(__file__))
+frontend_path = os.path.join(current_dir, "index.html").replace("\\", "/")
+
+print("\n" + "=" * 65)
+print("🚀 BACKEND READY! The AI is listening on port 8000.")
+print("🌐 CTRL+CLICK THE LINK BELOW TO OPEN THE FRONTEND UI:")
+print(f"👉  file:///{frontend_path}")
+print("=" * 65 + "\n")
+
 # Enable CORS so the HTML frontend can talk to the Python backend
 app.add_middleware(
     CORSMiddleware,
@@ -283,7 +294,7 @@ def predict_match(team1: str, team2: str):
 
     t1_win = float(np.sum(np.tril(matrix, -1)))
     draw = float(np.sum(np.diag(matrix)))
-    t2_win = float(np.triu(matrix, 1))
+    t2_win = float(np.sum(np.triu(matrix, 1)))
 
     flat_probs = []
     for i in range(11):
