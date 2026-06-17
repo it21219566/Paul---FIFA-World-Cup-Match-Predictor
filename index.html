@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Cup 2026 AI Predictor</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .bg-pattern {
+            background-color: #0f172a;
+            background-image: radial-gradient(circle at 100% 100%, #1e293b 0, #0f172a 50%, #020617 100%);
+        }
+        .animate-spin-slow { animation: spin 3s linear infinite; }
+    </style>
+</head>
+<body class="bg-pattern min-h-screen text-slate-100 p-4 md:p-8 flex flex-col items-center">
+
+    <!-- Header -->
+    <header class="text-center mb-10 mt-6 w-full max-w-4xl">
+        <div class="flex justify-center items-center mb-4 text-emerald-400">
+            <i data-lucide="trophy" class="w-12 h-12"></i>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight mb-2">World Cup 2026 <span class="text-emerald-400">Predictor</span></h1>
+        <p class="text-slate-400 text-lg">Powered by advanced XGBoost & Poisson Regression AI</p>
+    </header>
+
+    <!-- Selection Card -->
+    <main class="w-full max-w-4xl bg-slate-800/50 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700 p-6 md:p-8 mb-8">
+        <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+
+            <!-- Team 1 -->
+            <div class="w-full md:w-2/5">
+                <label class="block text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wide">Home / Team 1</label>
+                <select id="team1" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-4 text-lg font-bold text-white focus:ring-2 focus:ring-emerald-500 outline-none transition cursor-pointer">
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+
+            <!-- VS Badge -->
+            <div class="flex items-center justify-center bg-slate-900 rounded-full w-14 h-14 border-2 border-slate-700 shadow-inner flex-shrink-0 z-10 font-black text-slate-500">
+                VS
+            </div>
+
+            <!-- Team 2 -->
+            <div class="w-full md:w-2/5">
+                <label class="block text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wide">Away / Team 2</label>
+                <select id="team2" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-4 text-lg font-bold text-white focus:ring-2 focus:ring-emerald-500 outline-none transition cursor-pointer">
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+        </div>
+
+        <!-- Predict Button -->
+        <div class="mt-8 flex justify-center">
+            <button id="predictBtn" onclick="runPrediction()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 px-10 rounded-xl shadow-lg shadow-emerald-900/50 transition-all transform hover:scale-105 flex items-center gap-3 text-lg">
+                <i data-lucide="zap" class="w-5 h-5"></i>
+                Generate AI Prediction
+            </button>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMsg" class="hidden mt-4 text-red-400 text-center font-medium"></div>
+    </main>
+
+    <!-- Loading State -->
+    <div id="loading" class="hidden flex-col items-center justify-center py-10">
+        <i data-lucide="loader-2" class="w-12 h-12 text-emerald-500 animate-spin mb-4"></i>
+        <p class="text-slate-400 animate-pulse">Running thousands of simulations...</p>
+    </div>
+
+    <!-- Results Section (Hidden by Default) -->
+    <div id="resultsCard" class="hidden w-full max-w-4xl bg-slate-900 rounded-2xl shadow-2xl border border-slate-700 overflow-hidden">
+
+        <!-- Match Header -->
+        <div class="bg-slate-800 p-6 text-center border-b border-slate-700">
+            <h2 class="text-2xl font-black mb-1"><span id="resTeam1">Team 1</span> vs <span id="resTeam2">Team 2</span></h2>
+            <p id="resInfo" class="text-slate-400 text-sm flex items-center justify-center gap-2">
+                <i data-lucide="map-pin" class="w-4 h-4"></i> <span>...</span>
+            </p>
+        </div>
+
+        <div class="p-6 md:p-8">
+
+            <!-- Probability Bar -->
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wide mb-3">Match Outcome Probability</h3>
+            <div class="w-full h-10 md:h-12 flex rounded-lg overflow-hidden font-bold text-sm md:text-base shadow-inner mb-2">
+                <div id="barT1" class="bg-blue-600 flex items-center justify-center transition-all duration-1000 ease-in-out"></div>
+                <div id="barDraw" class="bg-slate-500 flex items-center justify-center transition-all duration-1000 ease-in-out"></div>
+                <div id="barT2" class="bg-rose-600 flex items-center justify-center transition-all duration-1000 ease-in-out"></div>
+            </div>
+
+            <!-- Probability Labels -->
+            <div class="flex justify-between text-sm font-semibold mb-8">
+                <div class="text-blue-400"><span id="lblT1">T1</span> (<span id="pctT1">0</span>%)</div>
+                <div class="text-slate-400">Draw (<span id="pctDraw">0</span>%)</div>
+                <div class="text-rose-400"><span id="lblT2">T2</span> (<span id="pctT2">0</span>%)</div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- xG and Stats -->
+                <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wide mb-4 border-b border-slate-700 pb-2">Expected Goals & Form</h3>
+
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="font-bold text-lg text-blue-400" id="statT1Name">T1</div>
+                        <div class="text-slate-500 font-medium">vs</div>
+                        <div class="font-bold text-lg text-rose-400 text-right" id="statT2Name">T2</div>
+                    </div>
+
+                    <div class="space-y-3 text-sm">
+                        <div class="flex justify-between items-center bg-slate-900 p-2 rounded">
+                            <span id="xg1" class="font-bold text-lg text-white">0.00</span>
+                            <span class="text-slate-400 text-xs uppercase">Expected Goals (xG)</span>
+                            <span id="xg2" class="font-bold text-lg text-white">0.00</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span id="elo1" class="font-medium text-slate-300">0</span>
+                            <span class="text-slate-500 text-xs">Elo Rating</span>
+                            <span id="elo2" class="font-medium text-slate-300">0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span id="gf1" class="font-medium text-emerald-400">0.0</span>
+                            <span class="text-slate-500 text-xs">Recent Goals For (GF)</span>
+                            <span id="gf2" class="font-medium text-emerald-400">0.0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span id="ga1" class="font-medium text-rose-400">0.0</span>
+                            <span class="text-slate-500 text-xs">Recent Goals Against (GA)</span>
+                            <span id="ga2" class="font-medium text-rose-400">0.0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exact Scores -->
+                <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wide mb-4 border-b border-slate-700 pb-2">Most Likely Exact Scores</h3>
+                    <div class="space-y-3" id="scoreList">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // Populate Dropdowns
+        const teams = [
+            "Algeria", "Argentina", "Australia", "Austria", "Belgium", "Bosnia and Herzegovina", "Brazil",
+            "Cabo Verde", "Canada", "Colombia", "DR Congo", "Croatia", "Curacao", "Czech Republic", "Ivory Coast",
+            "Ecuador", "Egypt", "England", "France", "Germany", "Ghana", "Haiti", "Iran", "Iraq", "Japan",
+            "Jordan", "South Korea", "Mexico", "Morocco", "Netherlands", "New Zealand", "Norway",
+            "Panama", "Paraguay", "Portugal", "Qatar", "Saudi Arabia", "Scotland", "Senegal", "South Africa",
+            "Spain", "Sweden", "Switzerland", "Tunisia", "Turkey", "United States", "Uruguay", "Uzbekistan"
+        ].sort();
+
+        const sel1 = document.getElementById('team1');
+        const sel2 = document.getElementById('team2');
+
+        teams.forEach(team => {
+            sel1.add(new Option(team, team));
+            sel2.add(new Option(team, team));
+        });
+
+        // Set default matchup
+        sel1.value = "Argentina";
+        sel2.value = "France";
+
+        async function runPrediction() {
+            const t1 = sel1.value;
+            const t2 = sel2.value;
+            const btn = document.getElementById('predictBtn');
+            const err = document.getElementById('errorMsg');
+
+            err.classList.add('hidden');
+
+            if(t1 === t2) {
+                err.textContent = "A team cannot play itself! Please select two different teams.";
+                err.classList.remove('hidden');
+                return;
+            }
+
+            // Hide results, show loading
+            document.getElementById('resultsCard').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('loading').classList.add('flex');
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+
+            try {
+                // Call Python FastAPI Backend
+                const response = await fetch(`http://127.0.0.1:8000/predict?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}`);
+
+                if (!response.ok) {
+                    throw new Error("Make sure the Python API is running on localhost:8000!");
+                }
+
+                const data = await response.json();
+
+                // --- Populate UI ---
+                document.getElementById('resTeam1').textContent = data.match.team1;
+                document.getElementById('resTeam2').textContent = data.match.team2;
+                document.getElementById('resInfo').innerHTML = `<i data-lucide="map-pin" class="w-4 h-4"></i> <span>${data.match.info}</span>`;
+                lucide.createIcons(); // refresh icons
+
+                // Probabilities
+                document.getElementById('barT1').style.width = `${data.probabilities.team1}%`;
+                document.getElementById('barT1').textContent = `${data.probabilities.team1}%`;
+                document.getElementById('lblT1').textContent = data.match.team1;
+                document.getElementById('pctT1').textContent = data.probabilities.team1;
+
+                document.getElementById('barDraw').style.width = `${data.probabilities.draw}%`;
+                document.getElementById('barDraw').textContent = `${data.probabilities.draw}%`;
+                document.getElementById('pctDraw').textContent = data.probabilities.draw;
+
+                document.getElementById('barT2').style.width = `${data.probabilities.team2}%`;
+                document.getElementById('barT2').textContent = `${data.probabilities.team2}%`;
+                document.getElementById('lblT2').textContent = data.match.team2;
+                document.getElementById('pctT2').textContent = data.probabilities.team2;
+
+                // Stats
+                document.getElementById('statT1Name').textContent = data.match.team1;
+                document.getElementById('statT2Name').textContent = data.match.team2;
+
+                document.getElementById('xg1').textContent = data.xg.team1.toFixed(2);
+                document.getElementById('xg2').textContent = data.xg.team2.toFixed(2);
+
+                document.getElementById('elo1').textContent = data.stats.team1.elo;
+                document.getElementById('elo2').textContent = data.stats.team2.elo;
+
+                document.getElementById('gf1').textContent = data.stats.team1.gf.toFixed(1);
+                document.getElementById('gf2').textContent = data.stats.team2.gf.toFixed(1);
+
+                document.getElementById('ga1').textContent = data.stats.team1.ga.toFixed(1);
+                document.getElementById('ga2').textContent = data.stats.team2.ga.toFixed(1);
+
+                // Top Scores
+                const list = document.getElementById('scoreList');
+                list.innerHTML = '';
+                data.top_scores.forEach((score, idx) => {
+                    const el = document.createElement('div');
+                    el.className = `flex justify-between items-center p-3 rounded-lg ${idx === 0 ? 'bg-emerald-900/30 border border-emerald-800/50' : 'bg-slate-900'}`;
+                    el.innerHTML = `
+                        <div class="flex items-center gap-3 w-1/3 justify-end font-semibold text-slate-300 text-sm md:text-base">${data.match.team1} <span class="text-xl text-white font-bold ml-2">${score.score1}</span></div>
+                        <div class="text-slate-500 font-black text-xs">-</div>
+                        <div class="flex items-center gap-3 w-1/3 justify-start font-semibold text-slate-300 text-sm md:text-base"><span class="text-xl text-white font-bold mr-2">${score.score2}</span> ${data.match.team2}</div>
+                        <div class="w-1/4 text-right text-emerald-400 font-bold">${score.prob}%</div>
+                    `;
+                    list.appendChild(el);
+                });
+
+                // Show Results
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('loading').classList.remove('flex');
+                document.getElementById('resultsCard').classList.remove('hidden');
+
+            } catch (error) {
+                err.textContent = "Error: " + error.message;
+                err.classList.remove('hidden');
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('loading').classList.remove('flex');
+            }
+
+            btn.disabled = false;
+            btn.classList.remove('opacity-50');
+        }
+    </script>
+</body>
+</html>
