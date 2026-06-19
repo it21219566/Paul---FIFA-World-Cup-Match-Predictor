@@ -7,6 +7,11 @@ from scipy.stats import poisson
 import warnings
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sklearn.metrics import log_loss, accuracy_score, mean_absolute_error, confusion_matrix
+import matplotlib
+
+matplotlib.use("Agg")  # Prevents a GUI window from blocking the server startup
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -181,7 +186,7 @@ def add_advanced_features(r):
 
 
 # ==========================================
-# 3. Startup Model Training
+# 3. Model Evaluation & Training
 # ==========================================
 print("Booting up ML Engine...")
 raw_df, scorers_df = fetch_data()
@@ -192,13 +197,101 @@ df_clean = merge_goalscorers(raw_df, scorers_df)
 df_engineered, final_elo = compute_elo_and_weights(df_clean)
 df_engineered = add_advanced_features(df_engineered)
 
+# --- START EVALUATION BLOCK ---
+print("\n--- Running Model Evaluation ---")
+# Split data: Train on 2000-2022, Test on 2023-Present
+eval_train = df_engineered[(df_engineered['date'] >= '2000-01-01') & (df_engineered['date'] < '2023-01-01')].dropna(
+    subset=FEATURES)
+eval_test = df_engineered[df_engineered['date'] >= '2023-01-01'].dropna(subset=FEATURES)
+
+eval_model_home = xgb.XGBRegressor(objective='count:poisson', n_estimators=150, max_depth=4, learning_rate=0.05)
+eval_model_away = xgb.XGBRegressor(objective='count:poisson', n_estimators=150, max_depth=4, learning_rate=0.05)
+
+eval_model_home.fit(eval_train[FEATURES], eval_train['home_score'].astype(int))
+eval_model_away.fit(eval_train[FEATURES], eval_train['away_score'].astype(int))
+
+# Predict on test set
+l_home_preds = eval_model_home.predict(eval_test[FEATURES])
+l_away_preds = eval_model_away.predict(eval_test[FEATURES])
+
+# Calculate MAE for Goal Predictions
+mae_home = mean_absolute_error(eval_test['home_score'], l_home_preds)
+mae_away = mean_absolute_error(eval_test['away_score'], l_away_preds)
+
+# Vectorized Matrix calculation for probabilities
+prob_home, prob_draw, prob_away = np.zeros(len(eval_test)), np.zeros(len(eval_test)), np.zeros(len(eval_test))
+for x in range(10):
+    for y in range(10):
+        p = poisson.pmf(x, l_home_preds) * poisson.pmf(y, l_away_preds)
+        prob_home += np.where(x > y, p, 0)
+        prob_draw += np.where(x == y, p, 0)
+        prob_away += np.where(x < y, p, 0)
+
+# Calculate Classification Metrics
+pred_probs = np.vstack((prob_home, prob_draw, prob_away)).T
+pred_classes = np.argmax(pred_probs, axis=1)
+
+actual_outcomes = np.where(eval_test['home_score'] > eval_test['away_score'], 0,
+                           np.where(eval_test['home_score'] == eval_test['away_score'], 1, 2))
+
+acc = accuracy_score(actual_outcomes, pred_classes)
+ll = log_loss(actual_outcomes, pred_probs, labels=[0, 1, 2])
+
+print(f"Test Set Size:   {len(eval_test)} matches (2023-Present)")
+print(f"Goal MAE:        Home {mae_home:.2f} | Away {mae_away:.2f}")
+print(f"Accuracy:        {acc * 100:.1f}%")
+print(f"Log-Loss:        {ll:.3f}")
+
+# --- VISUALIZATION ---
+print("Generating performance visualizations...")
+fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+# 1. Confusion Matrix
+cm = confusion_matrix(actual_outcomes, pred_classes, labels=[0, 1, 2])
+cax = axes[0].matshow(cm, cmap='Blues', alpha=0.8)
+for (i, j), z in np.ndenumerate(cm):
+    axes[0].text(j, i, f'{z}', ha='center', va='center',
+                 color='white' if cm[i, j] > cm.max() / 2 else 'black', fontsize=14, weight='bold')
+
+axes[0].set_title('Match Outcome Confusion Matrix', pad=20, fontsize=14, weight='bold')
+axes[0].set_xticks([0, 1, 2])
+axes[0].set_yticks([0, 1, 2])
+axes[0].set_xticklabels(['Home Win', 'Draw', 'Away Win'], fontsize=11)
+axes[0].set_yticklabels(['Home Win', 'Draw', 'Away Win'], fontsize=11)
+axes[0].set_xlabel('Predicted Outcome', fontsize=12, labelpad=10)
+axes[0].set_ylabel('Actual Outcome', fontsize=12, labelpad=10)
+axes[0].xaxis.set_ticks_position('bottom')
+
+# 2. Predicted vs Actual Goals Calibration (Home)
+actual_g = np.clip(eval_test['home_score'], 0, 4)  # Group 4+ goals together
+avg_pred_xg = [l_home_preds[actual_g == i].mean() if np.sum(actual_g == i) > 0 else 0 for i in range(5)]
+
+axes[1].bar(['0', '1', '2', '3', '4+'], avg_pred_xg, color='#0D9488', alpha=0.8, edgecolor='black')
+axes[1].plot(['0', '1', '2', '3', '4+'], [0, 1, 2, 3, 4], color='#E11D48', linestyle='--', marker='o', linewidth=2,
+             label='Perfect Calibration (y=x)')
+axes[1].set_title('xG Calibration: Predicted Expected Goals vs Actual Goals', fontsize=14, weight='bold')
+axes[1].set_xlabel('Actual Home Goals Scored', fontsize=12, labelpad=10)
+axes[1].set_ylabel('Average Predicted Expected Goals (xG)', fontsize=12, labelpad=10)
+axes[1].grid(axis='y', linestyle='--', alpha=0.7)
+axes[1].legend()
+
+plt.tight_layout()
+viz_path = os.path.join(CACHE_DIR, 'model_evaluation.png')
+plt.savefig(viz_path, dpi=150)
+plt.close()
+
+print(f"📊 Visualization saved to: {viz_path}")
+print("--------------------------------\n")
+# --- END EVALUATION BLOCK ---
+
+# Train FINAL model on ALL data so the live API is fully up-to-date
 train_df = df_engineered[df_engineered['date'] > '2000-01-01'].dropna(subset=FEATURES)
 
 X = train_df[FEATURES]
 y_home = train_df['home_score'].astype(int)
 y_away = train_df['away_score'].astype(int)
 
-print("Training Advanced Poisson XGBoost models...")
+print("Training Final Advanced Poisson XGBoost models on ALL data...")
 model_home = xgb.XGBRegressor(objective='count:poisson', n_estimators=150, max_depth=4, learning_rate=0.05)
 model_away = xgb.XGBRegressor(objective='count:poisson', n_estimators=150, max_depth=4, learning_rate=0.05)
 model_home.fit(X, y_home)
