@@ -395,31 +395,6 @@ The model was evaluated using matches played from **2023–Present**.
 - A 60.4% match outcome accuracy is competitive given the inherent uncertainty in football matches.
 - Log-loss of 0.864 indicates reasonably calibrated probability estimates.
 
----
-
-# 📈 Evaluation Visualizations
-
-## Match Outcome Confusion Matrix & xG Calibration
-
-> Save the uploaded evaluation image as:
-
-```text
-docs/model_evaluation.png
-```
-
-and include it in the repository.
-
-```markdown
-![Model Evaluation](docs/model_evaluation.png)
-```
-
-The confusion matrix demonstrates the model's classification performance across:
-
-- Home Wins
-- Draws
-- Away Wins
-
-The xG calibration chart compares predicted expected goals against actual goals scored and evaluates prediction calibration.
 
 ---
 
